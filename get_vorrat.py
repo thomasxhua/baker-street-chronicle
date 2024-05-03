@@ -5,6 +5,12 @@ date:           2024-05-02
 
 import requests
 from bs4 import BeautifulSoup
+import webbrowser
+
+from selenium import webdriver
+from selenium.webdriver.support.ui import Select
+from selenium.webdriver.common.by import By
+import time
 
 SHERLOCK_HOLMES_GESELLSCHAFT    = "https://sherlock-holmes-gesellschaft.de/product/"
 BAKER_STREET_CHRONICLE_01_48    = "ausgabe-"
@@ -15,24 +21,39 @@ BAKER_STREET_CHRONICLE_MAX      = 52    # CHANGE ME!
 
 HTML_P_TAG_PREFIX               = "<p class=\"stock in-stock\">"
 
-def extract_number_from_ptag(ptag):
-    n = len(HTML_P_TAG_PREFIX)
-    cut = ptag[n:]
+def cut_until_ws(s):
     i = 0
-    for c in cut:
+    for c in s:
         if c == " ":
-            return cut[:i]
+            return s[:i]
         i += 1
-    return cut
+    return s
+
+def extract_number_from_ptag(ptag):
+    return cut_until_ws(ptag[len(HTML_P_TAG_PREFIX):])
+
+def get_vorrat_using_selenium(url):
+    driver = webdriver.Firefox()
+    driver.get(url)
+    select_element = driver.find_element(By.CLASS_NAME, "mfn-vr-select")
+    select = Select(select_element)
+    select.select_by_value("mit Beilage")
+    p_tag = driver.find_element(By.CSS_SELECTOR, "p.stock.in-stock")
+    return int(cut_until_ws(p_tag.text))
 
 def get_vorrat(url):
     response = requests.get(url)
+    # search on sites without "Beilage" using bs4
     if response.status_code == 200:
         soup    = BeautifulSoup(response.content, 'html.parser')
         ptag   = soup.find('p', class_='stock in-stock')
         if ptag:
-            return int(extract_number_from_ptag(str(ptag)))
-    return -1
+            return int(extract_number_from_ptag(str(ptag))), False
+    # try looking for 
+        select  = soup.find('select', class_='mfn-vr-select')
+        if select:
+            return get_vorrat_using_selenium(url), True
+    return -1, False
 
 def leading_zero(n):
     if n >= 0 and n < 10:
@@ -52,7 +73,7 @@ STATUS_1_VAL    = 5
 STATUS_2_VAL    = 10
 
 STATUS_0_TEXT   = "- AUSVERKAUFT -"
-STATUS_1_TEXT   = "- ALARM ALARM -"
+STATUS_1_TEXT   = "-    ALARM    -"
 STATUS_2_TEXT   = "-   WARNUNG   -"
 STATUS_3_TEXT   = "               "
 
@@ -80,22 +101,28 @@ def ausverkauft_status_color(vorrat):
     return STATUS_3_COL
 
 def main():
-    for i in range(1, BAKER_STREET_CHRONICLE_MAX+1):
+    firefox_path = r'C:\Program Files\Mozilla Firefox\firefox.exe'
+    webbrowser.register('firefox', None, webbrowser.BackgroundBrowser(firefox_path))
+
+    for i in range(25, BAKER_STREET_CHRONICLE_MAX+1):
         url = SHERLOCK_HOLMES_GESELLSCHAFT
         url += BAKER_STREET_CHRONICLE_01_48 \
                 if (i < BAKER_STREET_CHRONICLE_SWITCH) \
                 else BAKER_STREET_CHRONICLE_49_MAX
         url += leading_zero(i)
         
-        vorrat = get_vorrat(url)
+        vorrat, mit_beilage = get_vorrat(url)
         print(color_text(
             ausverkauft_status_color(vorrat),
-            "Baker Street Chronicle Nr. " + leading_zero(i) + ":\t"
-            + str(vorrat) + "\t "
-            + ausverkauft_status_text(vorrat) + " \t\t ("
+            "Baker Street Chronicle Nr. " + leading_zero(i)
+            + (" (B):" if mit_beilage else ":    ") + "\t"
+            + str(vorrat) + "\t"
+            + ausverkauft_status_text(vorrat) + " \t("
             + url + ")"
         ))
-    pass
+
+        if ausverkauft_status_text(vorrat) == STATUS_0_TEXT:
+            webbrowser.get("firefox").open(url)
 
 if __name__ == "__main__":
     main()
