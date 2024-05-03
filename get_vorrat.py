@@ -10,6 +10,7 @@ import webbrowser
 from selenium import webdriver
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.common.by import By
+from selenium.webdriver.firefox.options import Options
 import time
 
 SHERLOCK_HOLMES_GESELLSCHAFT    = "https://sherlock-holmes-gesellschaft.de/product/"
@@ -33,24 +34,32 @@ def extract_number_from_ptag(ptag):
     return cut_until_ws(ptag[len(HTML_P_TAG_PREFIX):])
 
 def get_vorrat_using_selenium(url):
-    driver = webdriver.Firefox()
+    options             = Options()
+    options.headless    = True
+    driver  = webdriver.Firefox(options=options)
     driver.get(url)
-    select_element = driver.find_element(By.CLASS_NAME, "mfn-vr-select")
-    select = Select(select_element)
-    select.select_by_value("mit Beilage")
-    p_tag = driver.find_element(By.CSS_SELECTOR, "p.stock.in-stock")
-    return int(cut_until_ws(p_tag.text))
+    vorrat  = -1
+    try:
+        select_element = driver.find_element(By.CLASS_NAME, "mfn-vr-select")
+        select = Select(select_element)
+        select.select_by_value("mit Beilage")
+        p_tag   = driver.find_element(By.CSS_SELECTOR, "p.stock.in-stock")
+        vorrat  = int(cut_until_ws(p_tag.text))
+        driver.quit()
+        return vorrat
+    except:
+        driver.quit()
+        return vorrat
 
 def get_vorrat(url):
     response = requests.get(url)
     # search on sites without "Beilage" using bs4
     if response.status_code == 200:
-        soup    = BeautifulSoup(response.content, 'html.parser')
-        ptag   = soup.find('p', class_='stock in-stock')
+        soup    = BeautifulSoup(response.content, "html.parser")
+        ptag   = soup.find("p", class_="stock in-stock")
         if ptag:
             return int(extract_number_from_ptag(str(ptag))), False
-    # try looking for 
-        select  = soup.find('select', class_='mfn-vr-select')
+        select  = soup.find("select", class_="mfn-vr-select attribute_beilage")
         if select:
             return get_vorrat_using_selenium(url), True
     return -1, False
@@ -104,7 +113,7 @@ def main():
     firefox_path = r'C:\Program Files\Mozilla Firefox\firefox.exe'
     webbrowser.register('firefox', None, webbrowser.BackgroundBrowser(firefox_path))
 
-    for i in range(25, BAKER_STREET_CHRONICLE_MAX+1):
+    for i in range(1, BAKER_STREET_CHRONICLE_MAX+1):
         url = SHERLOCK_HOLMES_GESELLSCHAFT
         url += BAKER_STREET_CHRONICLE_01_48 \
                 if (i < BAKER_STREET_CHRONICLE_SWITCH) \
@@ -120,9 +129,9 @@ def main():
             + ausverkauft_status_text(vorrat) + " \t("
             + url + ")"
         ))
-
-        if ausverkauft_status_text(vorrat) == STATUS_0_TEXT:
-            webbrowser.get("firefox").open(url)
+        #if ausverkauft_status_text(vorrat) == STATUS_0_TEXT:
+        #    webbrowser.get("firefox").open(url)
 
 if __name__ == "__main__":
     main()
+
